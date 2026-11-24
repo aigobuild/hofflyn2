@@ -30,15 +30,106 @@ Free motion/abstract background videos:
 
 Download clips as `.mp4`, drop them into `public/motion/`, and add the filename to `components/motion-shell.tsx`.
 
-## Deploy to GitHub Pages
+## Deploy to GitHub Pages (GitHub Actions)
 
-Build static export:
+This is the repeatable deployment flow we used.
 
-```bash
-npm run build
+### 1. Configure Next.js for static export
+
+In `next.config.ts`, set the base path to match the repo name:
+
+```ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  output: "export",
+  basePath: "/<repo-name>",
+  assetPrefix: "/<repo-name>/",
+  images: { unoptimized: true },
+};
+
+export default nextConfig;
 ```
 
-The static site is in `out/`. Push `out/` to your GitHub Pages branch.
+If you reference static assets manually (e.g. video/image `src` strings), include the same base path: `/<repo-name>/...`.
+
+### 2. Add a lockfile
+
+GitHub Actions `setup-node` with `cache: npm` and `npm ci` requires a lockfile.
+
+```bash
+npm install --package-lock-only
+git add package-lock.json
+```
+
+### 3. Add the deploy workflow
+
+Create `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+### 4. Push to GitHub
+
+```bash
+git init
+git add -A
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/<owner>/<repo>.git
+git push -u origin main
+```
+
+### 5. Enable GitHub Pages
+
+In the repo: **Settings → Pages → Build and deployment → Source = GitHub Actions**.
+
+### 6. Verify
+
+- Actions: `https://github.com/<owner>/<repo>/actions`
+- Live site: `https://<owner>.github.io/<repo>/`
+
+If the site 404s, confirm Pages source is GitHub Actions and the workflow completed successfully. If assets/videos 404, check `basePath`/`assetPrefix` and any hardcoded `/path` URLs.
 
 ## Component Library Reference (Aura.build)
 
